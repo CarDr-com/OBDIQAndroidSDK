@@ -57,13 +57,13 @@ publishing {
     publications {
         create<MavenPublication>("release") {
             groupId = "Cardr-com" // Replace with your GitHub username
-            artifactId = "obdiqandroidsdk" // Library name
-            version = "1.0.3" // Use gradle.properties or dynamically get this
+            artifactId = "OBDIQAndroidSdk" // Library name
+            version = "1.0.4"// Ensure this matches your Git tag
 
             afterEvaluate {
-                from(components["release"])
-                artifact("$buildDir/outputs/aar/${project.name}-release.aar")
+                from(components["release"]) // Use the existing release component, do not manually add the AAR
             }
         }
     }
 }
+
