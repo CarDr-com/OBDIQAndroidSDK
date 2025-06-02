@@ -592,10 +592,11 @@ class ConnectionManager(
     //MARK  Firmware update code below
 
     public fun updateFirmWare(reqVersion: String, reqReleaseLevel: FirmwareReleaseType?) {
-        repairClubManager?.startDeviceFirmwareUpdate(
-            reqVersion,
-            reqReleaseLevel
-        )
+        repairClubManager?.startDeviceFirmwareUpdate(reqVersion,reqReleaseLevel,{
+
+        },{
+
+        })
     }
 
     public fun getDeviceFirmwareVersion(): Result<String?>? {
