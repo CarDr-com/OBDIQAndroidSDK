@@ -50,7 +50,7 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
 
-    api("com.github.RRCummins:RepairClubAndroidSDK:1.3.12")
+    api("com.github.RRCummins:RepairClubAndroidSDK:1.3.51")
 }
 
 publishing {
@@ -58,7 +58,7 @@ publishing {
         create<MavenPublication>("release") {
             groupId = "Cardr-com" // Replace with your GitHub username
             artifactId = "OBDIQAndroidSdk" // Library name
-            version = "1.0.4"// Ensure this matches your Git tag
+            version = "1.0.6"// Ensure this matches your Git tag
 
             afterEvaluate {
                 from(components["release"]) // Use the existing release component, do not manually add the AAR

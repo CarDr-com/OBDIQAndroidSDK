@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="PluginState">
+    <option name="returnTypeClassInfoList" value="[{&quot;className&quot;:&quot;misc&quot;,&quot;classExtension&quot;:&quot;xml&quot;},{&quot;className&quot;:&quot;gradle&quot;,&quot;classExtension&quot;:&quot;xml&quot;},{&quot;className&quot;:&quot;migrations&quot;,&quot;classExtension&quot;:&quot;xml&quot;},{&quot;className&quot;:&quot;vcs&quot;,&quot;classExtension&quot;:&quot;xml&quot;},{&quot;className&quot;:&quot;&quot;,&quot;classExtension&quot;:&quot;gitignore&quot;}]" />
+  </component>
+</project>
