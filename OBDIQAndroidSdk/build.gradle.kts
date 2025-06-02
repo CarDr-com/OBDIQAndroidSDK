@@ -14,7 +14,7 @@ android {
         consumerProguardFiles("consumer-rules.pro")
 
         buildConfigField("String", "SDK_KEY", "\"1feddf76-3b99-4c4b-869a-74046daa3e30\"")
-        buildConfigField("String", "SDK_VERSION", "\"1.0.0\"")
+        buildConfigField("String", "SDK_VERSION", "\"1.0.6\"")
     }
 
     buildTypes {
