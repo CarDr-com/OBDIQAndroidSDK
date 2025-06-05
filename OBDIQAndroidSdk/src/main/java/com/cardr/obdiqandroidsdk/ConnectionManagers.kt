@@ -246,7 +246,7 @@ class ConnectionManager(
             ConnectionStage.CONFIG_DOWNLOADED -> {
                 println("Connection:: configDownloaded - $connectionState")
                 CoroutineScope(Dispatchers.Main).launch {
-                    connectionListner?.isReadyForScan(true,true)
+                   // connectionListner?.isReadyForScan(true,true)
 
                 }
             }
@@ -254,7 +254,9 @@ class ConnectionManager(
             ConnectionStage.BUS_SYNCED_TO_CONFIG -> {
                 println("Connection:: busSyncedToConfig - $connectionState")
                 CoroutineScope(Dispatchers.Main).launch {
+                    if(connectionState == ConnectionState.COMPLETED){
                         connectionListner?.isReadyForScan(true,false)
+                    }
                 }
             }
 
