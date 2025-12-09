@@ -50,7 +50,7 @@ android {
 
 dependencies {
 
-    api("com.github.RRCummins:RepairClubAndroidSDK:1.4.63")
+    implementation("com.github.RRCummins:RepairClubAndroidSDK:1.4.63")
 }
 
 publishing {
