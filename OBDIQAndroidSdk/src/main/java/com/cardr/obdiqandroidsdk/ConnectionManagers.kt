@@ -512,6 +512,199 @@ class ConnectionManager(
     }
 
 
+
+    fun getRecallOldApi(
+        make: String,
+        model: String,
+        year: String,
+        callback: (RecallResponse?) -> Unit
+    ) {
+        val url = "${NHTSA1}${recallApi}?make=$make&model=$model&modelYear=$year"
+
+        val request = Request.Builder()
+            .url(url)
+            .get()
+            .addHeader("Content-Type", "application/json")
+            .addHeader("Authorization", TOKEN_PROD)
+            .addHeader("App-Type", "OBD SDK")
+            .addHeader("access-token", "edf9bc2d74ad74ac924c9bcbc337ef62")
+            .addHeader("server-key", "a4d01210f164259f3ed2f1072f0819d5")
+            .build()
+
+        OkHttpClient().newCall(request).enqueue(object : Callback {
+
+            override fun onFailure(call: Call, e: IOException) {
+                Log.e("RecallAPI", "Failed: ${e.message}")
+                callback(null)
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                val body = response.body?.string()
+                if (body.isNullOrEmpty()) {
+                    Log.e("RecallAPI", "Empty response")
+                    callback(null)
+                    return
+                }
+
+                try {
+                    val json = JSONObject(body)
+                    val parsed = parseRecallResponse(json)
+
+                    // Sort by date DESC
+                    parsed.results
+                        .filter { it.recallDate() != null }          // remove null dates (same as guard)
+                        .sortedByDescending { it.recallDate() }      // sort by date descending
+
+
+                    callback(parsed)
+                } catch (e: Exception) {
+                    Log.e("RecallAPI", "JSON error: ${e.message}")
+                    callback(null)
+                }
+            }
+        })
+    }
+
+
+    fun getRecallByVin(
+        vin: String,
+        callback: (RecallResponse?) -> Unit
+    ) {
+        val url = NHTSA + vin
+
+        val request = Request.Builder()
+            .url(url)
+            .get()
+            .addHeader("Content-Type", "application/json")
+            .addHeader("Authorization", TOKEN_PROD)
+            .addHeader("App-Type", "ReactApp")
+            .addHeader("access-token", "edf9bc2d74ad74ac924c9bcbc337ef62")
+            .addHeader("server-key", "a4d01210f164259f3ed2f1072f0819d5")
+            .build()
+
+        OkHttpClient().newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                Log.e("RecallAPI_VIN", "Error: ${e.message}")
+                callback(null)
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                val body = response.body?.string()
+                if (body.isNullOrEmpty()) {
+                    callback(null)
+                    return
+                }
+
+                try {
+                    val json = JSONObject(body)
+                    val parsed = parseRecallResponse(json)
+
+                    // Filter only Safety Recalls (V)
+                    val filtered = parsed.results.filter { it.isSafetyRecall() }
+
+                    parsed.results = filtered.toMutableList()
+
+                    // Sort DESC
+                    parsed.results
+                        .filter { it.recallDate() != null }          // remove null dates (same as guard)
+                        .sortedByDescending { it.recallDate() }      // sort by date descending
+
+
+                    callback(parsed)
+
+                } catch (e: Exception) {
+                    Log.e("RecallAPI_VIN", "JSON parse error: ${e.message}")
+                    callback(null)
+                }
+            }
+        })
+    }
+
+
+    fun parseRecallResponse(json: JSONObject): RecallResponse {
+        val response = RecallResponse()
+
+        if (json.has("openRecalls")) {
+            // NEW API
+            response.vin = json.optString("vin")
+            response.year = json.optString("year")
+            response.makeName = json.optString("makeName")
+            response.modelName = json.optString("modelName")
+            response.styleName = json.optString("styleName")
+            response.sourceIdentifier = json.optString("sourceIdentifier")
+            response.storeIdentifier = json.optString("storeIdentifier")
+            response.vehicleNotes = json.optString("vehicleNotes")
+
+            val arr = json.optJSONArray("openRecalls")
+            response.results = parseRecallResults(arr)
+        } else {
+            // OLD API
+            val arr = json.optJSONArray("results")
+            response.results = parseRecallResults(arr)
+        }
+
+        return response
+    }
+
+    fun parseRecallResults(arr: JSONArray?): MutableList<RecallResult> {
+        val list = mutableListOf<RecallResult>()
+        if (arr == null) return list
+
+        for (i in 0 until arr.length()) {
+            val item = arr.optJSONObject(i)
+
+            val result = if (item.has("nhtsaCampaignNumber")) {
+                parseNewApiRecall(item)
+            } else {
+                parseOldApiRecall(item)
+            }
+
+            list.add(result)
+        }
+
+        return list
+    }
+
+
+    fun parseOldApiRecall(json: JSONObject) = RecallResult(
+        Manufacturer = json.optString("Manufacturer"),
+        NHTSACampaignNumber = json.optString("NHTSACampaignNumber"),
+        NHTSAActionNumber = json.optString("NHTSAActionNumber"),
+        ReportReceivedDate = json.optString("ReportReceivedDate"),
+        Component = json.optString("Component"),
+        Summary = json.optString("Summary"),
+        Consequence = json.optString("Consequence"),
+        Remedy = json.optString("Remedy"),
+        Notes = json.optString("Notes"),
+        ModelYear = json.optString("ModelYear"),
+        Make = json.optString("Make"),
+        Model = json.optString("Model")
+    )
+
+
+    fun parseNewApiRecall(json: JSONObject) = RecallResult(
+        status = json.optString("status"),
+        noRemedy = json.optBoolean("noRemedy"),
+        recallTypeCode = json.optString("recallTypeCode"),
+        nhtsaCampaignNumber = json.optString("nhtsaCampaignNumber"),
+        mfgCampaignNumber = json.optString("mfgCampaignNumber"),
+        bulletinNumber = json.optString("bulletinNumber"),
+        componentDescription = json.optString("componentDescription"),
+        subject = json.optString("subject"),
+        emissionsRelated = json.optBoolean("emissionsRelated"),
+        mfgName = json.optString("mfgName"),
+        mfgText = json.optString("mfgText"),
+        defectSummary = json.optString("defectSummary"),
+        consequenceSummary = json.optString("consequenceSummary"),
+        correctiveSummary = json.optString("correctiveSummary"),
+        recallNotes = json.optString("recallNotes"),
+        fmvss = json.optString("fmvss"),
+        stopSale = json.optString("stopSale"),
+        nhtsaRecallDate = json.optString("nhtsaRecallDate"),
+        vehicleRecallUuid = json.optString("vehicleRecallUuid")
+    )
+
+
     fun getCurrentDateFormatted(): String {
         val currentDate = Date()
         val dateFormatter = SimpleDateFormat("MM-dd-yyyy h:mm a", Locale.getDefault())
@@ -914,17 +1107,40 @@ class ConnectionManager(
         dtcErrorCodeArray: List<DTCResponseModel>,
         callback: (Boolean, JSONObject?) -> Unit
     ) {
-         val dtcArr = mutableListOf<Map<String, String>>()
-        dtcErrorCodeArray.forEach { dtcResponseModel ->
-            val module = dtcResponseModel.moduleName
-            dtcResponseModel.dtcCodeArray.forEach { dtcResponse ->
-                val existingCodes = dtcArr.map { it["code"] }
-                if (!existingCodes.contains(dtcResponse.dtcErrorCode)) {
-                    val str = mapOf("code" to dtcResponse.dtcErrorCode, "module" to module)
-                    dtcArr.add(str)
+        val dtcArr = mutableListOf<Map<String, String>>()
+
+        dtcErrorCodeArray.forEach { model ->
+            val module = model.moduleName
+            model.dtcCodeArray.forEach { dtc ->
+
+                val status = dtc.status?.lowercase() ?: ""
+
+                // Match Swift logic: only include active / confirmed / permanent
+                if (status.contains("active") ||
+                    status.contains("confirmed") ||
+                    status.contains("permanent")) {
+
+                    // Step 1: Remove special characters like Swift regex "[^a-zA-Z0-9 .,]"
+                    val removedSpecial = dtc.desc
+                        ?.replace(Regex("[^a-zA-Z0-9 .,]"), "")
+                        ?: ""
+
+                    // Step 2: Collapse multiple spaces to single space
+                    val collapsedSpaces = removedSpecial
+                        .replace(Regex("\\s+"), " ")
+                        .trim()
+
+                    dtcArr.add(
+                        mapOf(
+                            "code" to dtc.dtcErrorCode,
+                            "module" to module,
+                            "code_desc" to collapsedSpaces
+                        )
+                    )
                 }
             }
         }
+
 
 
         if (!scanID.isEmpty()) {
