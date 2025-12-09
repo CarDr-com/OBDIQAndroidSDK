@@ -33,9 +33,19 @@ android {
         buildConfig = true
     }
 
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_21
-        targetCompatibility = JavaVersion.VERSION_21
+    kotlin {
+        jvmToolchain(21)
+    }
+
+    android {
+        compileOptions {
+            sourceCompatibility = JavaVersion.VERSION_21
+            targetCompatibility = JavaVersion.VERSION_21
+        }
+
+        kotlinOptions {
+            jvmTarget = "21"
+        }
     }
 
     composeOptions {
@@ -53,7 +63,7 @@ publishing {
         create<MavenPublication>("release") {
             groupId = "Cardr-com" // Replace with your GitHub username
             artifactId = "OBDIQAndroidSdk" // Library name
-            version = "1.0.6"// Ensure this matches your Git tag
+            version = "1.0.12"// Ensure this matches your Git tag
 
             afterEvaluate {
                 from(components["release"]) // Use the existing release component, do not manually add the AAR

@@ -30,10 +30,21 @@ android {
         }
     }
 
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_21
-        targetCompatibility = JavaVersion.VERSION_21
+    kotlin {
+        jvmToolchain(21)
     }
+
+    android {
+        compileOptions {
+            sourceCompatibility = JavaVersion.VERSION_21
+            targetCompatibility = JavaVersion.VERSION_21
+        }
+
+        kotlinOptions {
+            jvmTarget = "21"
+        }
+    }
+
 
     buildFeatures {
         compose = true
@@ -64,7 +75,7 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.runtime:runtime")
     implementation("androidx.compose.material3:material3")
-    implementation("androidx.activity:activity-compose:1.12.0")
+    implementation("androidx.activity:activity-compose:1.12.1")
 
     // Regular dependencies
     implementation("androidx.core:core-ktx:1.17.0")
