@@ -894,11 +894,11 @@ class ConnectionManager(
 
     //MARK  Firmware update code below
 
-    public fun updateFirmWare(reqVersion: String, reqReleaseLevel: FirmwareReleaseType?) {
+    public fun updateFirmWare(reqVersion: String, reqReleaseLevel: FirmwareReleaseType?, callback: (Double?, Boolean?) -> Unit) {
         repairClubManager?.startDeviceFirmwareUpdate(reqVersion,reqReleaseLevel,{
-
+            callback.invoke(it,null)
         },{
-
+            callback.invoke(null,it.getOrNull())
         })
     }
 
