@@ -1,9 +1,14 @@
 pluginManagement {
     repositories {
-        google()  // Remove the content filters
+        google {
+            content {
+                includeGroupByRegex("com\\.android.*")
+                includeGroupByRegex("com\\.google.*")
+                includeGroupByRegex("androidx.*")
+            }
+        }
         mavenCentral()
         gradlePluginPortal()
-        maven { url = uri("https://jitpack.io") }  // Add JitPack here too
     }
 }
 dependencyResolutionManagement {
@@ -18,6 +23,7 @@ dependencyResolutionManagement {
             }}
     }
 }
-rootProject.name = "OBDIQAndroidSdk"
+
+rootProject.name = "CarDrAndroidSDK"
 include(":app")
-include(":OBDIQAndroidSdk")
+include(":CardrAndroidSdk")
