@@ -49,7 +49,9 @@ data class VariableData(
     val repairInfo: String?,
     val createdAt: String?,
     val updatedAt: String?,
-    val scanUpdate: String?
+    val scanUpdate: String?,
+    val server_key : String?,
+    val access_token : String?
 )
 
 

@@ -221,8 +221,9 @@ private fun proceedWithPermissionsCheck(
             if (granted.size == bluetoothPermissions.size) {
 
                 val cnn = ConnectionManager(context)
-
-                cnn.initialize(context, object : ConnectionListner {
+                // CARDR-58748
+                //IAAf943bea2
+                cnn.initialize("IAAf943bea2",false,context, object : ConnectionListner {
 
                     override fun didFetchVehicalInfo(vehicleEntry: VehicleEntries) {
                         onVinFetched(vehicleEntry.VIN)
@@ -254,7 +255,7 @@ private fun proceedWithPermissionsCheck(
                     override fun didCheckScanStatus(status: String) {}
                     override fun didFetchMil(mil: Boolean) {}
                     override fun didUpdateProgress(progressStatus: String, percent: String) {
-                        Log.d("TAG", "didUpdateProgress: $progressStatus")
+                        Log.d("TAG", "didUpdateProgress: $percent")
                     }
                     override fun didReceivedRepairCost(jsonString: String) {}
                     override fun didScanForDevice(startScan: Boolean) {
