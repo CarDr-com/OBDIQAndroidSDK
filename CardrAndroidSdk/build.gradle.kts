@@ -16,8 +16,6 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
-        buildConfigField("String", "SDK_VERSION", "\"1.0.6\"")
-
         buildConfigField("String", "GET_VARIABLE_URL", "\"https://test.obdiq.com/api/v1/get-variable\"")
         buildConfigField("String", "BASE_URL", "\"https://test.obdiq.com/api/v1/sdk/\"")
         buildConfigField("String", "PROD_GET_VARIABLE_URL", "\"https://prod.obdiq.com/api/v1/get-variable\"")
