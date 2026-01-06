@@ -293,49 +293,49 @@ class ConnectionManager(
             ConnectionStage.VEHICLE_DECODED -> {
                 println("Connection:: vehicleDecoded - $connectionState ${connectionEntry.vehicleEntry}")
 
-                if(connectionState is ConnectionState.FAILED){
-                    repairClubManager?.supplyVehicleInformation("WDDLJ7DB3CA019130",vehicleEntry = null)
-                }else{
-                    connectionEntry.vehicleEntry?.let { vehicleEntry ->
-                        this.vehicleEntry = vehicleEntry
-
-                        carName = vehicleEntry.shortDescription
-                        yearstr = vehicleEntry.yearString
-                        make = vehicleEntry.make
-                        model = vehicleEntry.model
-                        isAlreadyConnected = true
-                        val entry = VehicleEntries()
-                        entry.VIN = vehicleEntry.VIN
-                        entry.shortDescription = vehicleEntry.shortDescription
-                        entry.make = vehicleEntry.make
-                        entry.model = vehicleEntry.model
-                        entry.description = vehicleEntry.description
-                        entry.engine = vehicleEntry.engine
-                        entry.vehiclePowertrainType = vehicleEntry.vehiclePowertrainType.toString()
-                        connectionListner?.didFetchVehicalInfo(entry)
-                    }
-                    getDeviceFirmwareVersion()
-                }
-
-//                connectionEntry.vehicleEntry?.let { vehicleEntry ->
-//                    this.vehicleEntry = vehicleEntry
+//                if(connectionState is ConnectionState.FAILED){
+//                    repairClubManager?.supplyVehicleInformation("WDDLJ7DB3CA019130",vehicleEntry = null)
+//                }else{
+//                    connectionEntry.vehicleEntry?.let { vehicleEntry ->
+//                        this.vehicleEntry = vehicleEntry
 //
-//                    carName = vehicleEntry.shortDescription
-//                    yearstr = vehicleEntry.yearString
-//                    make = vehicleEntry.make
-//                    model = vehicleEntry.model
-//                    isAlreadyConnected = true
-//                    val entry = VehicleEntries()
-//                    entry.VIN = vehicleEntry.VIN
-//                    entry.shortDescription = vehicleEntry.shortDescription
-//                    entry.make = vehicleEntry.make
-//                    entry.model = vehicleEntry.model
-//                    entry.description = vehicleEntry.description
-//                    entry.engine = vehicleEntry.engine
-//                    entry.vehiclePowertrainType = vehicleEntry.vehiclePowertrainType.toString()
-//                    connectionListner?.didFetchVehicalInfo(entry)
+//                        carName = vehicleEntry.shortDescription
+//                        yearstr = vehicleEntry.yearString
+//                        make = vehicleEntry.make
+//                        model = vehicleEntry.model
+//                        isAlreadyConnected = true
+//                        val entry = VehicleEntries()
+//                        entry.VIN = vehicleEntry.VIN
+//                        entry.shortDescription = vehicleEntry.shortDescription
+//                        entry.make = vehicleEntry.make
+//                        entry.model = vehicleEntry.model
+//                        entry.description = vehicleEntry.description
+//                        entry.engine = vehicleEntry.engine
+//                        entry.vehiclePowertrainType = vehicleEntry.vehiclePowertrainType.toString()
+//                        connectionListner?.didFetchVehicalInfo(entry)
+//                    }
+//                    getDeviceFirmwareVersion()
 //                }
-//                getDeviceFirmwareVersion()
+
+                connectionEntry.vehicleEntry?.let { vehicleEntry ->
+                    this.vehicleEntry = vehicleEntry
+
+                    carName = vehicleEntry.shortDescription
+                    yearstr = vehicleEntry.yearString
+                    make = vehicleEntry.make
+                    model = vehicleEntry.model
+                    isAlreadyConnected = true
+                    val entry = VehicleEntries()
+                    entry.VIN = vehicleEntry.VIN
+                    entry.shortDescription = vehicleEntry.shortDescription
+                    entry.make = vehicleEntry.make
+                    entry.model = vehicleEntry.model
+                    entry.description = vehicleEntry.description
+                    entry.engine = vehicleEntry.engine
+                    entry.vehiclePowertrainType = vehicleEntry.vehiclePowertrainType.toString()
+                    connectionListner?.didFetchVehicalInfo(entry)
+                }
+                getDeviceFirmwareVersion()
             }
 
             ConnectionStage.CONFIG_DOWNLOADED -> {
