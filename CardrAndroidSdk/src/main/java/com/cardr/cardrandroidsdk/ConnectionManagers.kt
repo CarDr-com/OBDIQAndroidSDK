@@ -88,20 +88,25 @@ class ConnectionManager(
 
     public val _emmissionList = MutableLiveData<ArrayList<EmissionRediness>?>()
     var connectionListner:ConnectionListner? = null
+    var isProductionReady = false
 
     var variables:VariableData? = null
     // Coroutine scope for ConnectionManager (lifecycle-safe for SDK)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
 
-    public fun initialize(context: Context,connectionListner: ConnectionListner){
+    public fun initialize(patnerID:String,isProductionReady:Boolean = false,context: Context,connectionListner: ConnectionListner){
         scanID = ""
+        this.isProductionReady = isProductionReady
         this.connectionListner = connectionListner
-        getVariable{
+        getVariable(patnerID){
+            if(it == null){
+                return@getVariable
+            }
             variables = it
             repairClubManager = RepairClubManager.getInstance()
             repairClubManager?.initialize(context)
-            repairClubManager?.configureSDK(it?.repairClubToken ?: "","OBDIQ ULTRA SDK Android",
+            repairClubManager?.configureSDK(it.repairClubToken ?: "","OBDIQ ULTRA SDK Android",
                 BuildConfig.SDK_VERSION,"support@cardr.com")
             subscribeToDisconnections()
             connectionListner.didScanForDevice(true)
@@ -110,16 +115,15 @@ class ConnectionManager(
 
     }
 
-    fun getVariable(callback: (VariableData?) -> Unit) {
+    fun getVariable(patnerID: String,callback: (VariableData?) -> Unit) {
 
-        val url = GET_VARIABLE_URL
+        val url = getVariableURL(isProductionReady)
 
         val request = Request.Builder()
             .url(url)
             .get()
             .addHeader("Content-Type", "application/json")
-            .addHeader("access-token", "edf9bc2d74ad74ac924c9bcbc337ef62")
-            .addHeader("server-key", "a4d01210f164259f3ed2f1072f0819d5")
+            .addHeader("partner-id", patnerID)
             .build()
 
         OkHttpClient().newCall(request).enqueue(object : Callback {
@@ -141,19 +145,21 @@ class ConnectionManager(
                     val data = json.getJSONObject("data")
 
                     val variableData = VariableData(
-                        id = data.optInt("id"),
-                        isDeleted = data.optInt("is_deleted"),
-                        recallToken = data.optString("recallToken", null),
-                        repairClubToken = data.optString("repairClubToken", null),
-                        autoAppUrl = data.optString("autoAppUrl", null),
-                        scan = data.optString("scan", null),
-                        nhtsaUrl = data.optString("nhtsaUrl", null),
-                        repairCost = data.optString("repairCost", null),
-                        recallApi = data.optString("recallApi", null),
-                        repairInfo = data.optString("repairInfo", null),
-                        createdAt = data.optString("createdAt", null),
-                        updatedAt = data.optString("updatedAt", null),
-                                scanUpdate = data.optString("scanUpdate", null)
+                        id = data.optJSONObject("variable")?.optInt("id"),
+                        isDeleted = data.optJSONObject("variable")?.optInt("is_deleted"),
+                        recallToken = data.optJSONObject("variable")?.optString("recallToken", ""),
+                        repairClubToken = data.optJSONObject("variable")?.optString("repairClubToken", ""),
+                        autoAppUrl = data.optJSONObject("variable")?.optString("autoAppUrl", ""),
+                        scan = data.optJSONObject("variable")?.optString("scan", ""),
+                        nhtsaUrl = data.optJSONObject("variable")?.optString("nhtsaUrl", ""),
+                        repairCost = data.optJSONObject("variable")?.optString("repairCost", ""),
+                        recallApi = data.optJSONObject("variable")?.optString("recallApi", ""),
+                        repairInfo = data.optJSONObject("variable")?.optString("repairInfo", ""),
+                        createdAt = data.optJSONObject("variable")?.optString("createdAt", ""),
+                        updatedAt = data.optJSONObject("variable")?.optString("updatedAt", ""),
+                        scanUpdate = data.optJSONObject("variable")?.optString("scanUpdate", ""),
+                        server_key = data.optJSONObject("partnerDetail")?.optString("server_key", ""),
+                        access_token = data.optJSONObject("partnerDetail")?.optString("access_token", ""),
                     )
                     callback(variableData)
                 } catch (e: Exception) {
@@ -287,49 +293,49 @@ class ConnectionManager(
             ConnectionStage.VEHICLE_DECODED -> {
                 println("Connection:: vehicleDecoded - $connectionState ${connectionEntry.vehicleEntry}")
 
-//                if(connectionState is ConnectionState.FAILED){
-////                    repairClubManager?.supplyVehicleInformation("WDDLJ7DB3CA019130",vehicleEntry = null)
-//                }else{
-//                    connectionEntry.vehicleEntry?.let { vehicleEntry ->
-//                        this.vehicleEntry = vehicleEntry
-//
-//                        carName = vehicleEntry.shortDescription
-//                        yearstr = vehicleEntry.yearString
-//                        make = vehicleEntry.make
-//                        model = vehicleEntry.model
-//                        isAlreadyConnected = true
-//                        val entry = VehicleEntries()
-//                        entry.VIN = vehicleEntry.VIN
-//                        entry.shortDescription = vehicleEntry.shortDescription
-//                        entry.make = vehicleEntry.make
-//                        entry.model = vehicleEntry.model
-//                        entry.description = vehicleEntry.description
-//                        entry.engine = vehicleEntry.engine
-//                        entry.vehiclePowertrainType = vehicleEntry.vehiclePowertrainType.toString()
-//                        connectionListner?.didFetchVehicalInfo(entry)
-//                    }
-//                    getDeviceFirmwareVersion()
-//                }
+                if(connectionState is ConnectionState.FAILED){
+                    repairClubManager?.supplyVehicleInformation("WDDLJ7DB3CA019130",vehicleEntry = null)
+                }else{
+                    connectionEntry.vehicleEntry?.let { vehicleEntry ->
+                        this.vehicleEntry = vehicleEntry
 
-                connectionEntry.vehicleEntry?.let { vehicleEntry ->
-                    this.vehicleEntry = vehicleEntry
-
-                    carName = vehicleEntry.shortDescription
-                    yearstr = vehicleEntry.yearString
-                    make = vehicleEntry.make
-                    model = vehicleEntry.model
-                    isAlreadyConnected = true
-                    val entry = VehicleEntries()
-                    entry.VIN = vehicleEntry.VIN
-                    entry.shortDescription = vehicleEntry.shortDescription
-                    entry.make = vehicleEntry.make
-                    entry.model = vehicleEntry.model
-                    entry.description = vehicleEntry.description
-                    entry.engine = vehicleEntry.engine
-                    entry.vehiclePowertrainType = vehicleEntry.vehiclePowertrainType.toString()
-                    connectionListner?.didFetchVehicalInfo(entry)
+                        carName = vehicleEntry.shortDescription
+                        yearstr = vehicleEntry.yearString
+                        make = vehicleEntry.make
+                        model = vehicleEntry.model
+                        isAlreadyConnected = true
+                        val entry = VehicleEntries()
+                        entry.VIN = vehicleEntry.VIN
+                        entry.shortDescription = vehicleEntry.shortDescription
+                        entry.make = vehicleEntry.make
+                        entry.model = vehicleEntry.model
+                        entry.description = vehicleEntry.description
+                        entry.engine = vehicleEntry.engine
+                        entry.vehiclePowertrainType = vehicleEntry.vehiclePowertrainType.toString()
+                        connectionListner?.didFetchVehicalInfo(entry)
+                    }
+                    getDeviceFirmwareVersion()
                 }
-                getDeviceFirmwareVersion()
+
+//                connectionEntry.vehicleEntry?.let { vehicleEntry ->
+//                    this.vehicleEntry = vehicleEntry
+//
+//                    carName = vehicleEntry.shortDescription
+//                    yearstr = vehicleEntry.yearString
+//                    make = vehicleEntry.make
+//                    model = vehicleEntry.model
+//                    isAlreadyConnected = true
+//                    val entry = VehicleEntries()
+//                    entry.VIN = vehicleEntry.VIN
+//                    entry.shortDescription = vehicleEntry.shortDescription
+//                    entry.make = vehicleEntry.make
+//                    entry.model = vehicleEntry.model
+//                    entry.description = vehicleEntry.description
+//                    entry.engine = vehicleEntry.engine
+//                    entry.vehiclePowertrainType = vehicleEntry.vehiclePowertrainType.toString()
+//                    connectionListner?.didFetchVehicalInfo(entry)
+//                }
+//                getDeviceFirmwareVersion()
             }
 
             ConnectionStage.CONFIG_DOWNLOADED -> {
@@ -591,11 +597,11 @@ class ConnectionManager(
 
 
         val request = Request.Builder()
-            .url(BASE_URL + variables?.scan)
+            .url(getBaseURL(isProductionReady) + variables?.scan)
             .post(RequestBody.create("application/json".toMediaTypeOrNull(), parameters.toString()))
             .addHeader("Content-Type", "application/json")
-            .addHeader("access-token", "edf9bc2d74ad74ac924c9bcbc337ef62")
-            .addHeader("server-key", "a4d01210f164259f3ed2f1072f0819d5")
+            .addHeader("access-token", variables?.access_token ?: "")
+            .addHeader("server-key", variables?.server_key ?: "")
             .build()
 
         OkHttpClient().newCall(request).enqueue(object : Callback {
@@ -635,8 +641,8 @@ class ConnectionManager(
             .addHeader("Content-Type", "application/json")
             .addHeader("Authorization", variables?.recallToken ?: "")
             .addHeader("App-Type", "OBD SDK")
-            .addHeader("access-token", "edf9bc2d74ad74ac924c9bcbc337ef62")
-            .addHeader("server-key", "a4d01210f164259f3ed2f1072f0819d5")
+            .addHeader("access-token", variables?.access_token ?: "")
+            .addHeader("server-key", variables?.server_key ?: "")
             .build()
 
         OkHttpClient().newCall(request).enqueue(object : Callback {
@@ -686,8 +692,8 @@ class ConnectionManager(
             .addHeader("Content-Type", "application/json")
             .addHeader("Authorization", variables?.recallToken ?: "")
             .addHeader("App-Type", "ReactApp")
-            .addHeader("access-token", "edf9bc2d74ad74ac924c9bcbc337ef62")
-            .addHeader("server-key", "a4d01210f164259f3ed2f1072f0819d5")
+            .addHeader("access-token", variables?.access_token ?: "")
+            .addHeader("server-key", variables?.server_key ?: "")
             .build()
 
         OkHttpClient().newCall(request).enqueue(object : Callback {
@@ -1268,7 +1274,7 @@ class ConnectionManager(
 
             dtcArrChunks.forEach { chunk ->
                 val chunkParams = mapOf("dtcCode" to chunk, "vin" to vinNumber)
-                callApiJSON(BASE_URL + variables?.repairInfo,chunkParams) { status, response ->
+                callApiJSON(getBaseURL(isProductionReady) + variables?.repairInfo,chunkParams) { status, response ->
                     CoroutineScope(Dispatchers.Main).launch {
                         if (status) {
                             successfulChunks++
@@ -1299,8 +1305,8 @@ class ConnectionManager(
             .url(url)
             .post(requestBody)
             .addHeader("Content-Type", "application/json")
-            .addHeader("access-token", "edf9bc2d74ad74ac924c9bcbc337ef62")
-            .addHeader("server-key", "a4d01210f164259f3ed2f1072f0819d5")
+            .addHeader("access-token", variables?.access_token ?: "")
+            .addHeader("server-key", variables?.server_key ?: "")
             .build()
 
         client.newCall(request).enqueue(object : Callback {
@@ -1318,7 +1324,7 @@ class ConnectionManager(
         // Implement the API call for repair cost
             if(!scanID.isEmpty() && !dtcErrorCodeArray.isEmpty()){
                 val response = makeJsonOfResponse(jsonObject)
-                callApiJSON(BASE_URL + variables?.repairCost,response){ status, response ->
+                callApiJSON(getBaseURL(isProductionReady) + variables?.repairCost,response){ status, response ->
 
                 }
 
@@ -1334,7 +1340,7 @@ class ConnectionManager(
 
     fun postOBDData(callback: (Boolean, String?) -> Unit) {
 
-        val url = BASE_URL + "update"
+        val url = getBaseURL(isProductionReady) + variables?.scanUpdate
     if(scanID.isNullOrEmpty()){
         return
     }
@@ -1432,8 +1438,8 @@ class ConnectionManager(
             .url(url)
             .post(requestBody)
             .addHeader("Content-Type", "application/json")
-            .addHeader("access-token", "edf9bc2d74ad74ac924c9bcbc337ef62")
-            .addHeader("server-key", "a4d01210f164259f3ed2f1072f0819d5")
+            .addHeader("access-token", variables?.access_token ?: "")
+            .addHeader("server-key", variables?.server_key ?: "")
             .build()
 
         OkHttpClient().newCall(request).enqueue(object : Callback {

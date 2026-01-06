@@ -1,4 +1,19 @@
 package com.cardr.cardrandroidsdk
 
-const  val   BASE_URL = "https://test.obdiq.com/api/v1/sdk/"
-const  val  GET_VARIABLE_URL = "https://test.obdiq.com/api/v1/get-variable"
+fun getVariableURL(isProductionReady: Boolean): String{
+    return if(isProductionReady){
+        BuildConfig.PROD_GET_VARIABLE_URL
+    }else{
+        BuildConfig.GET_VARIABLE_URL
+    }
+}
+
+
+fun getBaseURL(isProductionReady: Boolean): String{
+    return if(isProductionReady){
+        BuildConfig.PROD_BASE_URL
+    }else{
+        BuildConfig.BASE_URL
+    }
+}
+

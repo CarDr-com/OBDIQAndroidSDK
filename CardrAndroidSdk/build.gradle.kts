@@ -16,9 +16,12 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
-        buildConfigField("String", "SDK_KEY", "\"1feddf76-3b99-4c4b-869a-74046daa3e30\"")
         buildConfigField("String", "SDK_VERSION", "\"1.0.6\"")
 
+        buildConfigField("String", "GET_VARIABLE_URL", "\"https://test.obdiq.com/api/v1/get-variable\"")
+        buildConfigField("String", "BASE_URL", "\"https://test.obdiq.com/api/v1/sdk/\"")
+        buildConfigField("String", "PROD_GET_VARIABLE_URL", "\"https://prod.obdiq.com/api/v1/get-variable\"")
+        buildConfigField("String", "PROD_BASE_URL", "\"https://prod.obdiq.com/api/v1/sdk/\"")
     }
 
     buildTypes {
@@ -28,6 +31,8 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+
+
         }
     }
     compileOptions {
