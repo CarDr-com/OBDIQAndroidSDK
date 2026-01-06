@@ -195,8 +195,8 @@ class ConnectionManager(
         println("Connection:: subscribeToDisconnections")
     }
 
-   public fun scanForDevice() {
-       scanID = ""
+    public fun scanForDevice() {
+        scanID = ""
 
         repairClubManager?.returnDevices { devices ->
             devices.forEach { device ->
@@ -213,7 +213,7 @@ class ConnectionManager(
         }
     }
 
-  public  fun stopTroubleCodeScan() {
+    public  fun stopTroubleCodeScan() {
         repairClubManager?.stopTroubleCodeScan()
     }
 
@@ -311,6 +311,8 @@ class ConnectionManager(
 //                        entry.model = vehicleEntry.model
 //                        entry.description = vehicleEntry.description
 //                        entry.engine = vehicleEntry.engine
+//                        entry.year = vehicleEntry.year
+//                        entry.yearString = vehicleEntry.yearString
 //                        entry.vehiclePowertrainType = vehicleEntry.vehiclePowertrainType.toString()
 //                        connectionListner?.didFetchVehicalInfo(entry)
 //                    }
@@ -332,6 +334,8 @@ class ConnectionManager(
                     entry.model = vehicleEntry.model
                     entry.description = vehicleEntry.description
                     entry.engine = vehicleEntry.engine
+                    entry.year = vehicleEntry.year
+                    entry.yearString = vehicleEntry.yearString
                     entry.vehiclePowertrainType = vehicleEntry.vehiclePowertrainType.toString()
                     connectionListner?.didFetchVehicalInfo(entry)
                 }
@@ -341,7 +345,7 @@ class ConnectionManager(
             ConnectionStage.CONFIG_DOWNLOADED -> {
                 println("Connection:: configDownloaded - $connectionState")
                 CoroutineScope(Dispatchers.Main).launch {
-                   // connectionListner?.isReadyForScan(true,true)
+                    // connectionListner?.isReadyForScan(true,true)
 
                 }
             }
@@ -999,11 +1003,11 @@ class ConnectionManager(
                 CoroutineScope(Dispatchers.Main).launch {
                     emissionList.removeAll { it.name.contains("MIL") }
                     //val checkPassFail = checkPassFailEmission()
-                   // emissionList.map { it.finalstatus = checkPassFail }
+                    // emissionList.map { it.finalstatus = checkPassFail }
                     postOBDData {_,_ ->
 
                     }
-                   callback.invoke(emissionList)
+                    callback.invoke(emissionList)
 
                 }
 
@@ -1016,7 +1020,7 @@ class ConnectionManager(
 
     }
 
-     fun checkPassFailEmission(): String {
+    fun checkPassFailEmission(): String {
         val nonComplete = emissionList.filter { !it.complete }
         if (emissionList.isEmpty() || emissionList.size <= 5){
             passFail = ""
@@ -1214,12 +1218,12 @@ class ConnectionManager(
         }
     }
 
-   public fun getRepairCostSummary(vinNumber:String,dtcErrorCodeArray:List<DTCResponseModel>,callback: (Boolean,JSONObject?) -> Unit) {
-       if(dtcErrorCodeArray.isEmpty()){
-           callback.invoke(false,null)
-           return
-       }
-       processDtcCodes(vinNumber,dtcErrorCodeArray) { status, json ->
+    public fun getRepairCostSummary(vinNumber:String,dtcErrorCodeArray:List<DTCResponseModel>,callback: (Boolean,JSONObject?) -> Unit) {
+        if(dtcErrorCodeArray.isEmpty()){
+            callback.invoke(false,null)
+            return
+        }
+        processDtcCodes(vinNumber,dtcErrorCodeArray) { status, json ->
             callback.invoke(status,json)
         }
     }
@@ -1322,13 +1326,13 @@ class ConnectionManager(
 
     private fun postRepairCost(dtcErrorCodeArray: List<DTCResponseModel>, jsonObject: JSONObject?) {
         // Implement the API call for repair cost
-            if(!scanID.isEmpty() && !dtcErrorCodeArray.isEmpty()){
-                val response = makeJsonOfResponse(jsonObject)
-                callApiJSON(getBaseURL(isProductionReady) + variables?.repairCost,response){ status, response ->
-
-                }
+        if(!scanID.isEmpty() && !dtcErrorCodeArray.isEmpty()){
+            val response = makeJsonOfResponse(jsonObject)
+            callApiJSON(getBaseURL(isProductionReady) + variables?.repairCost,response){ status, response ->
 
             }
+
+        }
 
     }
     private fun makeJsonOfResponse(jsonObject: JSONObject?): Map<String, Any> {
@@ -1341,10 +1345,10 @@ class ConnectionManager(
     fun postOBDData(callback: (Boolean, String?) -> Unit) {
 
         val url = getBaseURL(isProductionReady) + variables?.scanUpdate
-    if(scanID.isNullOrEmpty()){
-        return
-    }
-            // -----------------------------
+        if(scanID.isNullOrEmpty()){
+            return
+        }
+        // -----------------------------
         // Build emission readiness array
         // -----------------------------
         val readinessArray = JSONArray()
@@ -1464,4 +1468,4 @@ public  data class  EmissionRediness (
     var complete:Boolean = false,
     var description:String = ""
 
-    )
+)

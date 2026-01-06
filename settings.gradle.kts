@@ -17,10 +17,11 @@ dependencyResolutionManagement {
         google()
         mavenCentral()
         maven { url = uri("https://jitpack.io")
-            credentials {
-                username = "CarDr Team (CarDr-com)"
-                password = "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"
-            }}
+//            credentials {
+//                username = "CarDr Team (CarDr-com)"
+//                password = "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"
+//            }
+        }
     }
 }
 

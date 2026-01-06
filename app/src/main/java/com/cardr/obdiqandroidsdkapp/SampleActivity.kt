@@ -223,7 +223,7 @@ private fun proceedWithPermissionsCheck(
                 val cnn = ConnectionManager(context)
                 // CARDR-58748
                 //IAAf943bea2
-                cnn.initialize("IAAf943bea2",false,context, object : ConnectionListner {
+                cnn.initialize("CARDR-58748",false,context, object : ConnectionListner {
 
                     override fun didFetchVehicalInfo(vehicleEntry: VehicleEntries) {
                         onVinFetched(vehicleEntry.VIN)
@@ -260,7 +260,7 @@ private fun proceedWithPermissionsCheck(
                     override fun didReceivedRepairCost(jsonString: String) {}
                     override fun didScanForDevice(startScan: Boolean) {
                         if (startScan){ cnn.scanForDevice()
-                        onScanStarted()}
+                            onScanStarted()}
                     }
                     override fun didReadyForRepairInfo(isReady: Boolean) {}
                     override fun didReceiveRepairCost(result: Map<String, Any>?) {}

@@ -23,5 +23,5 @@ import java.util.Date
      var vehiclePowertrainType: String? = null
      var withDevice: Boolean = false
      var year: Int = 0
-     val yearString: String = ""
+     var yearString: String = ""
  }
