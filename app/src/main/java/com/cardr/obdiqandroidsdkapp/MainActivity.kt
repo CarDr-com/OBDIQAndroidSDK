@@ -63,7 +63,7 @@ private fun proceedWithPermissionsCheck(
                 if (granted.size == bluetoothPermissions.size) {
                     var vin = ""
                     val cnn = ConnectionManager(context)
-                    cnn.initialize("",false,context,object : ConnectionListner{
+                    cnn.initialize("IAAL1D5U8U",true,context,object : ConnectionListner{
                         override fun didDevicesFetch(foundedDevices: List<DeviceItem>?) {
                             Log.e("didDevicesFetch",foundedDevices.toString())
 

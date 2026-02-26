@@ -1,4 +1,4 @@
-package com.cardr.obdiqandroidsdk
+package com.cardr.cardrandroidsdk
 
 import java.text.SimpleDateFormat
 import java.util.Date

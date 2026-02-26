@@ -4,14 +4,9 @@ import android.content.Context
 import android.os.CountDownTimer
 import android.os.Handler
 import android.os.Looper
-import android.provider.SyncStateContract
 import android.util.Log
 import androidx.lifecycle.MutableLiveData
-import com.cardr.obdiqandroidsdk.RecallResponse
-import com.cardr.obdiqandroidsdk.RecallResult
 import com.cardr.obdiqandroidsdk.VehicleEntries
-import com.cardr.obdiqandroidsdk.isSafetyRecall
-import com.cardr.obdiqandroidsdk.recallDate
 import com.google.gson.Gson
 import kotlinx.coroutines.SupervisorJob
 import com.repairclub.repaircludsdk.coreobjects.FirmwareProgress

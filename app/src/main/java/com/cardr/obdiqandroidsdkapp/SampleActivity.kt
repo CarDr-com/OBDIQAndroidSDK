@@ -223,7 +223,7 @@ private fun proceedWithPermissionsCheck(
                 val cnn = ConnectionManager(context)
                 // CARDR-58748
                 //IAAf943bea2
-                cnn.initialize("CARDR-58748",false,context, object : ConnectionListner {
+                cnn.initialize("IAAL1D5U8U",true,context, object : ConnectionListner {
 
                     override fun didFetchVehicalInfo(vehicleEntry: VehicleEntries) {
                         onVinFetched(vehicleEntry.VIN)
