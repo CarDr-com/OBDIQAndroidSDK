@@ -627,7 +627,7 @@ class ConnectionManager(
     }
 
 
-
+    var recallResponse: RecallResponse? = null
     fun getRecallOldApi(
         make: String,
         model: String,
@@ -681,12 +681,12 @@ class ConnectionManager(
     }
 
 
-    fun getRecallByVin(
+   public  fun getRecallByVin(
         vin: String,
         callback: (RecallResponse?) -> Unit
     ) {
         val url = variables?.autoAppUrl + vin
-
+       recallResponse = null
         val request = Request.Builder()
             .url(url)
             .get()
@@ -724,7 +724,10 @@ class ConnectionManager(
                         .filter { it.recallDate() != null }          // remove null dates (same as guard)
                         .sortedByDescending { it.recallDate() }      // sort by date descending
 
+                    recallResponse = parsed
+                    postOBDData({_,_ ->
 
+                    })
                     callback(parsed)
 
                 } catch (e: Exception) {
@@ -894,6 +897,19 @@ class ConnectionManager(
 
     public fun disconnectOBD() {
         scanID = ""
+        emissionList.clear()
+        dtcErrorCodeArray.clear()
+         warmUpCyclesSinceCodesCleared = 0.0
+         warmUpCyclesSinceCodesClearedstr = "-"
+
+         distanceSinceCodesCleared = 0
+         distanceSinceCodesClearedstr = "-"
+
+         timeSinceTroubleCodesCleared = 0
+         timeSinceTroubleCodesClearedstr = "-"
+
+         timeRunWithMILOn = 0
+         timeRunWithMILOnstr = "-"
         repairClubManager?.stopTroubleCodeScan()
         repairClubManager?.disconnectFromDevice()
     }
@@ -1439,41 +1455,28 @@ class ConnectionManager(
         // -----------------------------
         val recallHistory = JSONArray()
 
-//        recallResponse?.results?.forEach { recall ->
-//            val item = JSONObject()
-//
-//            if (isAutoRecall) {
-//                item.put("NHTSACampaignNumber", recall.nhtsaCampaignNumber ?: "N/A")
-//                item.put("NHTSAActionNumber", recall.mfgCampaignNumber ?: "N/A")
-//                item.put("ReportReceivedDate", recall.nhtsaRecallDate ?: "N/A")
-//                item.put("Component", recall.componentDescriptionrecall ?: "N/A")
-//                item.put("Remedy", recall.correctiveSummary ?: "N/A")
-//                item.put("Notes", recall.recallNotes ?: "N/A")
-//                item.put(
-//                    "StopSale",
-//                    if (recall.stopSale?.uppercase() == "YES") "YES" else "-"
-//                )
-//                item.put(
-//                    "Summary",
-//                    recall.subject ?: recall.defectSummary ?: "N/A"
-//                )
-//                item.put("Consequence", recall.consequenceSummary ?: "N/A")
-//
-//            } else {
-//                if (!recall.actionNumber.isNullOrEmpty()) {
-//                    item.put("NHTSAActionNumber", recall.actionNumber)
-//                }
-//                item.put("NHTSACampaignNumber", recall.campaignNumber ?: "N/A")
-//                item.put("ReportReceivedDate", recall.reportReceivedDate ?: "N/A")
-//                item.put("Component", recall.component ?: "N/A")
-//                item.put("Summary", recall.summary ?: "N/A")
-//                item.put("Consequence", recall.consequence ?: "N/A")
-//                item.put("Remedy", recall.remedy ?: "N/A")
-//                item.put("Notes", recall.notes ?: "N/A")
-//            }
-//
-//            recallHistory.put(item)
-//        }
+        recallResponse?.results?.forEach { recall ->
+            val item = JSONObject()
+
+                item.put("NHTSACampaignNumber", recall.nhtsaCampaignNumber ?: "N/A")
+                item.put("NHTSAActionNumber", recall.mfgCampaignNumber ?: "N/A")
+                item.put("ReportReceivedDate", recall.nhtsaRecallDate ?: "N/A")
+                item.put("Component", recall.componentDescription ?: "N/A")
+                item.put("Remedy", recall.correctiveSummary ?: "N/A")
+                item.put("Notes", recall.recallNotes ?: "N/A")
+                item.put(
+                    "StopSale",
+                    if (recall.stopSale?.uppercase() == "YES") "YES" else "-"
+                )
+                item.put(
+                    "Summary",
+                    recall.subject ?: recall.defectSummary ?: "N/A"
+                )
+                item.put("Consequence", recall.consequenceSummary ?: "N/A")
+
+
+            recallHistory.put(item)
+        }
 
         // -----------------------------
         // Final request body
