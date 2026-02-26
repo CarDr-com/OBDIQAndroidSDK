@@ -60,7 +60,8 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     api(libs.repairclubandroidsdk)
-
+    implementation(libs.logging.interceptor)
+    implementation(libs.okhttp)
 }
 
 publishing {

@@ -35,6 +35,7 @@ import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import okhttp3.logging.HttpLoggingInterceptor
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
@@ -42,6 +43,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.TimeUnit
 import kotlin.math.roundToInt
 
 class ConnectionManager(
@@ -1223,9 +1225,20 @@ class ConnectionManager(
         }
     }
 
-
+    private fun mapToJson(value: Any?): Any? =
+        when (value) {
+            is Map<*, *> -> {
+                val obj = JSONObject()
+                value.forEach { (k, v) ->
+                    if (k is String) obj.put(k, mapToJson(v))
+                }
+                obj
+            }
+            is List<*> -> JSONArray(value.map { mapToJson(it) })
+            else -> value
+        }
     fun processDtcCodes(
-        vinNumber:String,
+        vinNumber: String,
         dtcErrorCodeArray: List<DTCResponseModel>,
         callback: (Boolean, JSONObject?) -> Unit
     ) {
@@ -1233,88 +1246,134 @@ class ConnectionManager(
 
         dtcErrorCodeArray.forEach { model ->
             val module = model.moduleName
+
             model.dtcCodeArray.forEach { dtc ->
+                val status = dtc.status.lowercase()
 
-                val status = dtc.status.lowercase() ?: ""
-
-                // Match Swift logic: only include active / confirmed / permanent
-                if (status.contains("active") ||
+                if (
+                    status.contains("active") ||
                     status.contains("confirmed") ||
-                    status.contains("permanent")) {
-
-                    // Step 1: Remove special characters like Swift regex "[^a-zA-Z0-9 .,]"
-                    val removedSpecial = dtc.desc
+                    status.contains("permanent")
+                ) {
+                    val cleanedDesc = dtc.desc
                         ?.replace(Regex("[^a-zA-Z0-9 .,]"), "")
+                        ?.replace(Regex("\\s+"), " ")
+                        ?.trim()
                         ?: ""
-
-                    // Step 2: Collapse multiple spaces to single space
-                    val collapsedSpaces = removedSpecial
-                        .replace(Regex("\\s+"), " ")
-                        .trim()
 
                     dtcArr.add(
                         mapOf(
                             "code" to dtc.dtcErrorCode,
                             "module" to module,
-                            "code_desc" to collapsedSpaces
+                            "code_desc" to cleanedDesc
                         )
                     )
                 }
             }
         }
 
+        if (scanID.isEmpty() || dtcArr.isEmpty()) {
+            callback(false, null)
+            return
+        }
 
+        val chunks = dtcArr.chunked(5)
+        var success = 0
+        var failure = 0
+        var lastSuccessResponse: JSONObject? = null
 
-        if (!scanID.isEmpty()) {
-            val dtcArrChunkSize = 5
-            val dtcArrChunks = dtcArr.chunked(dtcArrChunkSize)
-            var successfulChunks = 0
-            var failedChunks = 0
+        chunks.forEach { chunk ->
+            val params = mapOf(
+                "dtcCode" to chunk,
+                "vin" to vinNumber
+            )
 
-            dtcArrChunks.forEach { chunk ->
-                val chunkParams = mapOf("dtcCode" to chunk, "vin" to vinNumber)
-                callApiJSON(getBaseURL(isProductionReady) + variables?.repairInfo,chunkParams) { status, response ->
-                    CoroutineScope(Dispatchers.Main).launch {
-                        if (status) {
-                            successfulChunks++
-                        } else {
-                            failedChunks++
+            callApiJSON(
+                getBaseURL(isProductionReady) + variables?.repairInfo,
+                params
+            ) { status, json ->
+                CoroutineScope(Dispatchers.Main).launch {
+
+                    if (status) {
+                        success++
+                        if (json != null) lastSuccessResponse = json
+                    } else {
+                        failure++
+                    }
+
+                    if (success + failure == chunks.size) {
+                        if (success == 0) {
+                            callback(false, null)
+                            return@launch
                         }
 
-                        if (successfulChunks + failedChunks == dtcArrChunks.size) {
-                            if (failedChunks == dtcArrChunks.size) {
-                                callback.invoke(status,null)
-                                return@launch
-                            }
-                            val jsonResponse = response?.body?.string()
-                            val jsonObject = jsonResponse?.let { JSONObject(it) }
-                            postRepairCost(dtcErrorCodeArray,jsonObject)
-                            callback.invoke(status,jsonObject)
-                        }
+                        postRepairCost(dtcErrorCodeArray, lastSuccessResponse)
+                        callback(true, lastSuccessResponse)
                     }
                 }
             }
         }
     }
+    private inline fun logDebug(message: () -> String) {
+        if (!isProductionReady) {
+            Log.d("API_LOG", message())
+        }
+    }
+    private val httpClient: OkHttpClient by lazy {
+        val logging = HttpLoggingInterceptor { message ->
+            logDebug { message }
+        }.apply {
+            level = HttpLoggingInterceptor.Level.HEADERS
+        }
 
-    private fun callApiJSON(url:String,params: Map<String, Any>, callback: (Boolean,Response?) -> Unit) {
-        val client = OkHttpClient()
-        val requestBody = RequestBody.create("application/json".toMediaType(), Gson().toJson(params))
+        OkHttpClient.Builder()
+            .connectTimeout(130, TimeUnit.SECONDS)
+            .writeTimeout(130, TimeUnit.SECONDS)
+            .readTimeout(130, TimeUnit.SECONDS)
+            .callTimeout(145, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
+            .addInterceptor(logging)
+            .build()
+    }
+    private fun callApiJSON(
+        url: String,
+        params: Map<String, Any>,
+        callback: (Boolean, JSONObject?) -> Unit
+    ) {
+        val jsonBody = mapToJson(params) as JSONObject
+
+        val requestBody = jsonBody
+            .toString()
+            .toRequestBody("application/json; charset=utf-8".toMediaType())
+
         val request = Request.Builder()
             .url(url)
             .post(requestBody)
             .addHeader("Content-Type", "application/json")
-            .addHeader("access-token", variables?.access_token ?: "")
-            .addHeader("server-key", variables?.server_key ?: "")
+            .addHeader("Accept", "application/json")
+            .addHeader("access-token", variables?.access_token.orEmpty())
+            .addHeader("server-key", variables?.server_key.orEmpty())
             .build()
 
-        client.newCall(request).enqueue(object : Callback {
+        httpClient.newCall(request).enqueue(object : Callback {
+
             override fun onFailure(call: Call, e: IOException) {
-                callback(false,null)
+                Log.e("API_LOG", "API Failure", e)
+                callback(false, null)
             }
 
             override fun onResponse(call: Call, response: Response) {
-                callback(response.isSuccessful,response)
+                response.use {
+                    val bodyString = it.body?.string()
+                    logDebug { "Response body = $bodyString" }
+                    val jsonObject = try {
+                        bodyString?.let { JSONObject(it) }
+                    } catch (e: Exception) {
+                        null
+                    }
+
+                    callback(it.isSuccessful, jsonObject)
+                }
             }
         })
     }
