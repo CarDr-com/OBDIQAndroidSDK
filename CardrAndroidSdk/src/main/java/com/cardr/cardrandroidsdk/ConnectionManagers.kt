@@ -7,7 +7,6 @@ import android.os.Looper
 import android.util.Log
 import androidx.lifecycle.MutableLiveData
 import com.cardr.obdiqandroidsdk.VehicleEntries
-import com.google.gson.Gson
 import kotlinx.coroutines.SupervisorJob
 import com.repairclub.repaircludsdk.coreobjects.FirmwareProgress
 import com.repairclub.repaircludsdk.manager.RepairClubManager
@@ -20,7 +19,6 @@ import com.repairclub.repaircludsdk.models.ModuleItem
 import com.repairclub.repaircludsdk.models.ResponseStatus
 import com.repairclub.repaircludsdk.models.ScanProgressUpdate
 import com.repairclub.repaircludsdk.models.VehicleEntry
-
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -468,14 +466,21 @@ class ConnectionManager(
                 )
 
                 val sortedModules = modulesCopy.sortedWith(Comparator { module1, module2 ->
+                    val module1Name = module1.name ?: ""
+                    val module2Name = module2.name ?: ""
+                    val module1ResponseOrder = responseOrder[module1.responseStatus] ?: Int.MAX_VALUE
+                    val module2ResponseOrder = responseOrder[module2.responseStatus] ?: Int.MAX_VALUE
+                    val module1Codes = module1.codes.orEmpty()
+                    val module2Codes = module2.codes.orEmpty()
+
                     when {
-                        module1.name.contains("Generic Codes") -> return@Comparator -1
-                        module2.name.contains("Generic Codes") -> return@Comparator 1
-                        responseOrder[module1.responseStatus]!! < responseOrder[module2.responseStatus]!! -> return@Comparator -1
-                        responseOrder[module1.responseStatus]!! > responseOrder[module2.responseStatus]!! -> return@Comparator 1
-                        module1.codes.isNotEmpty() && module2.codes.isEmpty() -> return@Comparator -1
-                        module1.codes.isEmpty() && module2.codes.isNotEmpty() -> return@Comparator 1
-                        else -> module1.name.compareTo(module2.name)
+                        module1Name.contains("Generic Codes") -> return@Comparator -1
+                        module2Name.contains("Generic Codes") -> return@Comparator 1
+                        module1ResponseOrder < module2ResponseOrder -> return@Comparator -1
+                        module1ResponseOrder > module2ResponseOrder -> return@Comparator 1
+                        module1Codes.isNotEmpty() && module2Codes.isEmpty() -> return@Comparator -1
+                        module1Codes.isEmpty() && module2Codes.isNotEmpty() -> return@Comparator 1
+                        else -> module1Name.compareTo(module2Name)
                     }
                 })
                 handleResponse(sortedModules)
@@ -490,10 +495,10 @@ class ConnectionManager(
         scope.launch(Dispatchers.IO) {
             val dtcErrorCodeList = mutableListOf<DTCResponseModel>()
 
-            val distinctModules = modules.distinctBy { it.name }
+            val distinctModules = modules.distinctBy { it.name ?: "" }
 
             distinctModules.forEach { module ->
-                val moduleName = module.name
+                val moduleName = module.name ?: ""
 
                 val dtcResponse = DTCResponseModel().apply {
                     id = module.id
@@ -503,10 +508,11 @@ class ConnectionManager(
                 }
 
                 val codesList = module.codes
-                    .distinctBy { it.code }
+                    .orEmpty()
+                    .distinctBy { it.code ?: "" }
                     .map { code ->
                         DTCResponse(
-                            code.code,
+                            code.code ?: "",
                             code.description ?: "",
                             code.statusesDescription
                         ).apply {

@@ -239,7 +239,9 @@ private fun proceedWithPermissionsCheck(
 
                             CoroutineScope(Dispatchers.Main).launch {
                                 delay(2000)
-                                cnn.getRepairCostSummary(vin, it) { _, _ -> }
+                                cnn.getRepairCostSummary(vin, it) { _, _ ->
+
+                                }
                             }
                         }
                     }
@@ -257,7 +259,9 @@ private fun proceedWithPermissionsCheck(
                     override fun didUpdateProgress(progressStatus: String, percent: String) {
                         Log.d("TAG", "didUpdateProgress: $percent")
                     }
-                    override fun didReceivedRepairCost(jsonString: String) {}
+                    override fun didReceivedRepairCost(jsonString: String) {
+
+                    }
                     override fun didScanForDevice(startScan: Boolean) {
                         if (startScan){ cnn.scanForDevice()
                             onScanStarted()}
