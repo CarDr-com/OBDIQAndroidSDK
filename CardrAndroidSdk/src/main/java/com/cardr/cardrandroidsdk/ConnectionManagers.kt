@@ -23,6 +23,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import okhttp3.Call
 import okhttp3.Callback
@@ -42,6 +43,7 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
 import kotlin.math.roundToInt
 
 class ConnectionManager(
@@ -959,6 +961,25 @@ class ConnectionManager(
             completionCallback.invoke(it)
         }
     }
+
+   suspend fun getNewestAvailableFirmwareVersion(): Result<String?> =
+        runCatching {
+            suspendCancellableCoroutine<String?> { continuation ->
+
+                repairClubManager?.getFirmwareLatestVersionDetails { result ->
+
+                    if (continuation.isActive) {
+                        continuation.resumeWith(
+                            result.map { it.version }
+                        )
+                    }
+                } ?: run {
+                    if (continuation.isActive) {
+                        continuation.resume(null)
+                    }
+                }
+            }
+        }
 
     private fun completionPercentageText(progress: FirmwareProgress): Double {
         val currentBlockNumber = progress.currentBlockNumber.toDouble()
