@@ -194,7 +194,6 @@ class ConnectionManager(
 
     public fun scanForDevice() {
         scanID = ""
-
         repairClubManager?.returnDevices { devices ->
             devices.forEach { device ->
                 if (!foundDevices.contains(device)) {
