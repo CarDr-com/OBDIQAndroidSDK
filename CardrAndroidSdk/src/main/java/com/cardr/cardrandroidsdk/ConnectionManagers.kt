@@ -21,7 +21,9 @@ import com.repairclub.repaircludsdk.models.ScanProgressUpdate
 import com.repairclub.repaircludsdk.models.VehicleEntry
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -49,6 +51,12 @@ import kotlin.math.roundToInt
 class ConnectionManager(
     private val context: Context,
 ) {
+    private companion object {
+        const val SCAN_LOG_TAG = "CardrScanLog"
+        const val SCAN_LOG_UPLOAD_INTERVAL_MS = 30_000L
+        const val SCAN_LOG_LIMIT = 5_000
+    }
+
     private val foundDevices = CopyOnWriteArrayList<DeviceItem>()
     private var timerStarted = false
     private var currentFirmwareVersion = ""
@@ -90,6 +98,130 @@ class ConnectionManager(
     var variables:VariableData? = null
     // Coroutine scope for ConnectionManager (lifecycle-safe for SDK)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val scanLogs = CopyOnWriteArrayList<String>()
+    private var scanLogUploadJob: Job? = null
+    private var scanLogDebouncedUploadJob: Job? = null
+    private var scanLogSession = 0L
+    @Volatile
+    private var isScanLogSessionActive = false
+
+    private fun beginScanLogSession(trigger: String) {
+        if (isScanLogSessionActive) {
+            finishScanLogSession("restarted")
+        }
+        scanLogUploadJob?.cancel()
+        scanLogSession += 1
+        scanLogs.clear()
+        isScanLogSessionActive = true
+        appendScanLog("Session started trigger=$trigger")
+
+        val session = scanLogSession
+        scanLogUploadJob = scope.launch(Dispatchers.IO) {
+            while (isActive && isScanLogSessionActive && session == scanLogSession) {
+                delay(SCAN_LOG_UPLOAD_INTERVAL_MS)
+                appendScanLog("30s heartbeat bufferedLogs=${scanLogs.size}")
+                uploadScanLogs(session = session, finalUpload = false)
+            }
+        }
+    }
+
+    private fun ensureScanLogSession(trigger: String) {
+        if (!isScanLogSessionActive) beginScanLogSession(trigger)
+    }
+
+    private fun appendScanLog(step: String) {
+        if (!isScanLogSessionActive) return
+        val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+        val entry = "$timestamp | $step"
+        if (scanLogs.size >= SCAN_LOG_LIMIT) scanLogs.removeAt(0)
+        scanLogs.add(entry)
+        Log.d(SCAN_LOG_TAG, entry)
+    }
+
+    private fun finishScanLogSession(reason: String) {
+        if (!isScanLogSessionActive) return
+        appendScanLog("Session finished reason=$reason")
+        scanLogUploadJob?.cancel()
+        scanLogUploadJob = null
+        scanLogDebouncedUploadJob?.cancel()
+        scanLogDebouncedUploadJob = null
+        val session = scanLogSession
+        uploadScanLogs(session = session, finalUpload = true)
+        isScanLogSessionActive = false
+    }
+
+    private fun recordOperation(
+        step: String,
+        uploadAfter: Boolean = false,
+        vinOverride: String? = null
+    ) {
+        ensureScanLogSession("sdkOperation")
+        appendScanLog(step)
+        if (uploadAfter) queueScanLogUpload(vinOverride)
+    }
+
+    private fun queueScanLogUpload(vinOverride: String? = null) {
+        val uploadVin = vinOverride?.takeIf { it.isNotBlank() } ?: vinNumber
+        if (uploadVin.isBlank()) {
+            appendScanLog("Operation log upload waiting for VIN")
+            return
+        }
+        val session = scanLogSession
+        scanLogDebouncedUploadJob?.cancel()
+        scanLogDebouncedUploadJob = scope.launch(Dispatchers.IO) {
+            delay(500)
+            uploadScanLogs(session = session, finalUpload = false, vinOverride = uploadVin)
+        }
+    }
+
+    private fun uploadScanLogs(
+        session: Long,
+        finalUpload: Boolean,
+        retryCount: Int = 0,
+        vinOverride: String? = null
+    ) {
+        if (session != scanLogSession || scanLogs.isEmpty()) return
+
+        val payload = scanLogs.toList().joinToString(separator = "\n")
+        val body = JSONObject().apply {
+            put("scanId", scanID)
+            put("vin", vinOverride?.takeIf { it.isNotBlank() } ?: vinNumber)
+            put("log_array", payload)
+        }.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+
+        val request = Request.Builder()
+            .url(getScanLogsURL(isProductionReady))
+            .post(body)
+            .addHeader("Content-Type", "application/json")
+            .addHeader("Accept", "application/json")
+            .addHeader("access-token", variables?.access_token.orEmpty())
+            .addHeader("server-key", variables?.server_key.orEmpty())
+            .build()
+
+        httpClient.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                Log.e(SCAN_LOG_TAG, "Scan log upload failed final=$finalUpload", e)
+                retryFinalScanLogUpload(session, finalUpload, retryCount)
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                response.use {
+                    Log.d(SCAN_LOG_TAG, "Scan log upload completed code=${it.code} final=$finalUpload")
+                    if (!it.isSuccessful) {
+                        retryFinalScanLogUpload(session, finalUpload, retryCount)
+                    }
+                }
+            }
+        })
+    }
+
+    private fun retryFinalScanLogUpload(session: Long, finalUpload: Boolean, retryCount: Int) {
+        if (!finalUpload || retryCount >= 1 || session != scanLogSession) return
+        scope.launch(Dispatchers.IO) {
+            delay(5_000)
+            uploadScanLogs(session, finalUpload = true, retryCount = retryCount + 1)
+        }
+    }
 
 
     public fun initialize(patnerID:String,isProductionReady:Boolean = false,context: Context,connectionListner: ConnectionListner){
@@ -179,6 +311,8 @@ class ConnectionManager(
 
     public fun subscribeToDisconnections() {
         repairClubManager?.subscribeToDisconnections {
+            appendScanLog("OBD disconnected")
+            finishScanLogSession("disconnected")
             connectedStatus = false
             connectionStates.clear()
             latestConnectionStage = null
@@ -194,14 +328,21 @@ class ConnectionManager(
 
     public fun scanForDevice() {
         scanID = ""
+        foundDevices.clear()
+        timerStarted = false
+        beginScanLogSession("scanForDevice")
+        appendScanLog("Bluetooth device discovery started")
         repairClubManager?.returnDevices { devices ->
+            appendScanLog("Device discovery callback count=${devices.size}")
             devices.forEach { device ->
                 if (!foundDevices.contains(device)) {
                     foundDevices.add(device)
                     connectionListner?.didDevicesFetch(foundDevices)
                     println("Connection:: Device found - ${device.name} ${device.rssi}")
+                    appendScanLog("Device found name=${device.name} rssi=${device.rssi}")
                     if (!timerStarted) {
                         timerStarted = true
+                        appendScanLog("Closest-device selection timer started")
                         startSelectDeviceTimer()
                     }
                 }
@@ -210,6 +351,7 @@ class ConnectionManager(
     }
 
     public  fun stopTroubleCodeScan() {
+        appendScanLog("Trouble-code scan stop requested")
         repairClubManager?.stopTroubleCodeScan()
     }
 
@@ -223,11 +365,14 @@ class ConnectionManager(
     private fun selectAndConnectToClosestDevice() {
         if (foundDevices.isEmpty()) {
             println("Connection:: No devices found")
+            appendScanLog("No Bluetooth devices found")
+            finishScanLogSession("no_devices_found")
             return
         }
 
         val closestDevice = foundDevices.minByOrNull { it.rssi } // Chooses lowest RSSI
         println("closestDevice "+closestDevice)
+        appendScanLog("Connecting to selected device name=${closestDevice?.name} rssi=${closestDevice?.rssi}")
         closestDevice?.blePeripheral?.let { blePeripheral ->
             repairClubManager?.connectTo(closestDevice) { connectionEntry, connectionStage, connectionState ->
                 repairClubManager?.stopScanning()
@@ -243,6 +388,7 @@ class ConnectionManager(
         connectionStage: ConnectionStage,
         connectionState: ConnectionState?
     ) {
+        appendScanLog("Connection stage=$connectionStage state=${connectionState.toScanLogLabel()}")
         if (connectionState != null) {
             connectionStates[connectionStage] = connectionState
         }
@@ -276,6 +422,7 @@ class ConnectionManager(
 
                 if (connectionState == ConnectionState.COMPLETED) {
                     vinNumber = connectionEntry.vin ?: ""
+                    appendScanLog("VIN received present=${vinNumber.isNotBlank()}")
 
                     timer.cancel()
                     // Stop timer and stop to open No vin screen
@@ -334,6 +481,7 @@ class ConnectionManager(
                     entry.yearString = vehicleEntry.yearString
                     entry.vehiclePowertrainType = vehicleEntry.vehiclePowertrainType.toString()
                     connectionListner?.didFetchVehicalInfo(entry)
+                    appendScanLog("Vehicle decoded year=${vehicleEntry.yearString} make=${vehicleEntry.make} model=${vehicleEntry.model}")
                 }
                 getDeviceFirmwareVersion()
             }
@@ -375,6 +523,16 @@ class ConnectionManager(
         }
     }
 
+    private fun ConnectionState?.toScanLogLabel(): String = when (this) {
+        null -> "null"
+        ConnectionState.COMPLETED -> "COMPLETED"
+        ConnectionState.STARTED -> "STARTED"
+        ConnectionState.NOT_STARTED -> "NOT_STARTED"
+        is ConnectionState.FAILED -> "FAILED"
+        is ConnectionState.MANUALLY_ENTERED -> "MANUALLY_ENTERED"
+        else -> this::class.java.simpleName
+    }
+
 
 
     var noVinFunction = openNoVin()
@@ -394,19 +552,26 @@ class ConnectionManager(
 
     public fun startScan() {
         scanID = ""
+        ensureScanLogSession("startScan")
+        appendScanLog("DTC scan requested")
         timer.cancel()
         if (connectionStates[ConnectionStage.CONFIG_DOWNLOADED] is ConnectionState.FAILED) {
+            appendScanLog("Starting generic scan because config download failed")
             startGenericScan()
         }
         if (connectionStates[ConnectionStage.BUS_SYNCED_TO_CONFIG] == ConnectionState.COMPLETED) {
+            appendScanLog("Starting advanced scan because bus sync completed")
             startAdvancedScan()
         } else if (connectionStates[ConnectionStage.BUS_SYNCED_TO_CONFIG] is ConnectionState.FAILED) {
+            appendScanLog("Starting generic scan because bus sync failed")
             startGenericScan()
+        } else if (connectionStates[ConnectionStage.CONFIG_DOWNLOADED] !is ConnectionState.FAILED) {
+            appendScanLog("Scan could not start because connection configuration is not ready")
         }
     }
 
     fun startAdvancedScan() {
-
+        appendScanLog("Advanced trouble-code scan API invoked")
         repairClubManager?.startTroubleCodeScan(true) {
             scope.launch(Dispatchers.Main) {
                 setProgressValue(it)
@@ -415,6 +580,7 @@ class ConnectionManager(
     }
 
     fun startGenericScan() {
+        appendScanLog("Generic trouble-code scan API invoked")
         repairClubManager?.startTroubleCodeScan(false) {
             scope.launch(Dispatchers.Main) {
                 setProgressValue(it)
@@ -430,29 +596,36 @@ class ConnectionManager(
     private fun handleScanProgressUpdate(update: ScanProgressUpdate) {
         when (update) {
             is ScanProgressUpdate.ScanStarted -> {
+                appendScanLog("Scan progress=started")
                 connectionListner?.didUpdateProgress("ScanStarted","")
             }
 
             is ScanProgressUpdate.ModuleScanningUpdate -> {
+                appendScanLog("Scan progress=module_scanning")
                 connectionListner?.didUpdateProgress("ModuleScanningUpdate","")
 
             }
 
             is ScanProgressUpdate.ModulesUpdate -> {
+                appendScanLog("Scan progress=modules_updated moduleCount=${update.modules.size}")
                 connectionListner?.didUpdateProgress("DTC Scan update - ModulesUpdate, Number of Modules: ${update.modules.size}","")
             }
 
             is ScanProgressUpdate.ProgressUpdate -> {
 
                 val progressPercent = (update.progress * 100).toInt()
+                appendScanLog("Scan progress=$progressPercent%")
                 connectionListner?.didUpdateProgress("ProgressUpdate","${progressPercent}")
             }
 
             is ScanProgressUpdate.ScanFailed -> {
+                appendScanLog("Scan failed errors=${update.errors}")
                 connectionListner?.didUpdateProgress("Scanning:: DTC Scan update - ScanFailed - ${update.errors}","")
+                finishScanLogSession("scan_failed")
             }
 
             is ScanProgressUpdate.ScanSucceeded -> {
+                appendScanLog("Scan succeeded moduleCount=${update.modules.size}")
                 connectionListner?.didUpdateProgress("ScanSucceeded","")
 
                 repairClubManager?.stopTroubleCodeScan()
@@ -491,6 +664,7 @@ class ConnectionManager(
     }
 
     fun handleResponse(modules: List<ModuleItem>) {
+        appendScanLog("Processing scan response moduleCount=${modules.size}")
         dtcErrorCodeArray.clear()
 
         scope.launch(Dispatchers.IO) {
@@ -531,6 +705,7 @@ class ConnectionManager(
                     dtcErrorCodeList.distinctBy { it.moduleName }
                 )
                 connectionListner?.didReceivedCode(dtcErrorCodeArray)
+                appendScanLog("Scan response processed uniqueModules=${dtcErrorCodeArray.size} dtcCount=${dtcErrorCodeArray.sumOf { it.dtcCodeArray.size }}")
                 callScanApi()
 
             }
@@ -544,8 +719,12 @@ class ConnectionManager(
     fun callScanApi() {
         if (vinNumber.isEmpty()) {
             Log.e("callScanApi", "VIN number is empty")
+            appendScanLog("Final scan API skipped because VIN is empty")
+            finishScanLogSession("missing_vin")
             return
         }
+
+        appendScanLog("Final scan API request started")
 
         val dtcArr = dtcErrorCodeArray.flatMap { model ->
             model.dtcCodeArray.map { dtc ->
@@ -615,19 +794,25 @@ class ConnectionManager(
         OkHttpClient().newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 Log.e("callScanApi", "API Call failed: ${e.localizedMessage}")
+                appendScanLog("Final scan API failed error=${e.localizedMessage}")
+                finishScanLogSession("scan_api_failure")
             }
 
             override fun onResponse(call: Call, response: Response) {
-                response.body?.string()?.let { responseBody ->
-                    val json = JSONObject(responseBody)
-                    json.optJSONObject("data")
-                        ?.optString("id")
-                        ?.takeIf { it.isNotEmpty() }
-                        ?.let {
-                            scanID = it
-                            connectionListner?.didReadyForRepairInfo(true)
-                        }
-
+                response.use {
+                    val responseBody = it.body?.string().orEmpty()
+                    val returnedScanId = runCatching {
+                        JSONObject(responseBody).optJSONObject("data")?.optString("id").orEmpty()
+                    }.getOrDefault("")
+                    if (it.isSuccessful && returnedScanId.isNotEmpty()) {
+                        scanID = returnedScanId
+                        appendScanLog("Final scan API succeeded scanId=$scanID")
+                        connectionListner?.didReadyForRepairInfo(true)
+                        finishScanLogSession("completed")
+                    } else {
+                        appendScanLog("Final scan API returned code=${it.code} scanIdPresent=${returnedScanId.isNotEmpty()}")
+                        finishScanLogSession("scan_api_error")
+                    }
                 }
             }
         })
@@ -641,6 +826,7 @@ class ConnectionManager(
         year: String,
         callback: (RecallResponse?) -> Unit
     ) {
+        recordOperation("getRecallOldApi started make=$make model=$model year=$year")
         val url = "${variables?.nhtsaUrl}${variables?.recallApi}?make=$make&model=$model&modelYear=$year"
 
         val request = Request.Builder()
@@ -657,6 +843,7 @@ class ConnectionManager(
 
             override fun onFailure(call: Call, e: IOException) {
                 Log.e("RecallAPI", "Failed: ${e.message}")
+                recordOperation("getRecallOldApi callback=failure error=${e.message}", uploadAfter = true)
                 callback(null)
             }
 
@@ -664,6 +851,7 @@ class ConnectionManager(
                 val body = response.body?.string()
                 if (body.isNullOrEmpty()) {
                     Log.e("RecallAPI", "Empty response")
+                    recordOperation("getRecallOldApi callback=empty_response code=${response.code}", uploadAfter = true)
                     callback(null)
                     return
                 }
@@ -676,11 +864,11 @@ class ConnectionManager(
                     parsed.results
                         .filter { it.recallDate() != null }          // remove null dates (same as guard)
                         .sortedByDescending { it.recallDate() }      // sort by date descending
-
-
+                    recordOperation("getRecallOldApi callback=success recallCount=${parsed.results.size}", uploadAfter = true)
                     callback(parsed)
                 } catch (e: Exception) {
                     Log.e("RecallAPI", "JSON error: ${e.message}")
+                    recordOperation("getRecallOldApi callback=parse_failure error=${e.message}", uploadAfter = true)
                     callback(null)
                 }
             }
@@ -692,6 +880,7 @@ class ConnectionManager(
         vin: String,
         callback: (RecallResponse?) -> Unit
     ) {
+        recordOperation("getRecallByVin started vinPresent=${vin.isNotBlank()}")
         val url = variables?.autoAppUrl + vin
        recallResponse = null
         val request = Request.Builder()
@@ -707,12 +896,14 @@ class ConnectionManager(
         OkHttpClient().newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 Log.e("RecallAPI_VIN", "Error: ${e.message}")
+                recordOperation("getRecallByVin callback=failure error=${e.message}", uploadAfter = true, vinOverride = vin)
                 callback(null)
             }
 
             override fun onResponse(call: Call, response: Response) {
                 val body = response.body?.string()
                 if (body.isNullOrEmpty()) {
+                    recordOperation("getRecallByVin callback=empty_response code=${response.code}", uploadAfter = true, vinOverride = vin)
                     callback(null)
                     return
                 }
@@ -733,12 +924,14 @@ class ConnectionManager(
 
                     recallResponse = parsed
                     postOBDData({_,_ ->
-
+                        recordOperation("getRecallByVin postOBDData callback received", uploadAfter = true, vinOverride = vin)
                     })
+                    recordOperation("getRecallByVin callback=success safetyRecallCount=${parsed.results.size}", uploadAfter = true, vinOverride = vin)
                     callback(parsed)
 
                 } catch (e: Exception) {
                     Log.e("RecallAPI_VIN", "JSON parse error: ${e.message}")
+                    recordOperation("getRecallByVin callback=parse_failure error=${e.message}", uploadAfter = true, vinOverride = vin)
                     callback(null)
                 }
             }
@@ -747,6 +940,7 @@ class ConnectionManager(
 
 
     fun parseRecallResponse(json: JSONObject): RecallResponse {
+        recordOperation("parseRecallResponse started format=${if (json.has("openRecalls")) "new" else "old"}")
         val response = RecallResponse()
 
         if (json.has("openRecalls")) {
@@ -767,13 +961,17 @@ class ConnectionManager(
             val arr = json.optJSONArray("results")
             response.results = parseRecallResults(arr)
         }
-
+        recordOperation("parseRecallResponse completed recallCount=${response.results.size}", uploadAfter = true)
         return response
     }
 
     fun parseRecallResults(arr: JSONArray?): MutableList<RecallResult> {
+        recordOperation("parseRecallResults started itemCount=${arr?.length() ?: 0}")
         val list = mutableListOf<RecallResult>()
-        if (arr == null) return list
+        if (arr == null) {
+            recordOperation("parseRecallResults completed itemCount=0", uploadAfter = true)
+            return list
+        }
 
         for (i in 0 until arr.length()) {
             val item = arr.optJSONObject(i)
@@ -786,12 +984,14 @@ class ConnectionManager(
 
             list.add(result)
         }
-
+        recordOperation("parseRecallResults completed itemCount=${list.size}", uploadAfter = true)
         return list
     }
 
 
-    fun parseOldApiRecall(json: JSONObject) = RecallResult(
+    fun parseOldApiRecall(json: JSONObject): RecallResult {
+        recordOperation("parseOldApiRecall started")
+        val result = RecallResult(
         Manufacturer = json.optString("Manufacturer"),
         NHTSACampaignNumber = json.optString("NHTSACampaignNumber"),
         NHTSAActionNumber = json.optString("NHTSAActionNumber"),
@@ -803,11 +1003,16 @@ class ConnectionManager(
         Notes = json.optString("Notes"),
         ModelYear = json.optString("ModelYear"),
         Make = json.optString("Make"),
-        Model = json.optString("Model")
-    )
+            Model = json.optString("Model")
+        )
+        recordOperation("parseOldApiRecall completed", uploadAfter = true)
+        return result
+    }
 
 
-    fun parseNewApiRecall(json: JSONObject) = RecallResult(
+    fun parseNewApiRecall(json: JSONObject): RecallResult {
+        recordOperation("parseNewApiRecall started")
+        val result = RecallResult(
         status = json.optString("status"),
         noRemedy = json.optBoolean("noRemedy"),
         recallTypeCode = json.optString("recallTypeCode"),
@@ -826,8 +1031,11 @@ class ConnectionManager(
         fmvss = json.optString("fmvss"),
         stopSale = json.optString("stopSale"),
         nhtsaRecallDate = json.optString("nhtsaRecallDate"),
-        vehicleRecallUuid = json.optString("vehicleRecallUuid")
-    )
+            vehicleRecallUuid = json.optString("vehicleRecallUuid")
+        )
+        recordOperation("parseNewApiRecall completed", uploadAfter = true)
+        return result
+    }
 
 
     fun getCurrentDateFormatted(): String {
@@ -839,6 +1047,7 @@ class ConnectionManager(
 
 
     fun separateArrays(): Pair<List<DTCResponse>, List<DTCResponse>> {
+        recordOperation("separateArrays started moduleCount=${dtcErrorCodeArray.size}")
         val activeStatusArray = ArrayList<DTCResponse>()
         val otherStatusArray = ArrayList<DTCResponse>()
         dtcErrorCodeArray.forEach { model ->
@@ -866,17 +1075,25 @@ class ConnectionManager(
         }
         //        var activeArray = appDelegate.dtcErrorCodeArray.filter { $0.status.lowercased() == "active" || $0.status.lowercased() == "current" || $0.status.lowercased() == "current" }
         //        let otherStatusArray = appDelegate.dtcErrorCodeArray.filter { $0.status.lowercased() != "active" }
-        return Pair(activeStatusArray, otherStatusArray)
+        val result = Pair(activeStatusArray, otherStatusArray)
+        recordOperation(
+            "separateArrays completed activeCount=${activeStatusArray.size} otherCount=${otherStatusArray.size}",
+            uploadAfter = true
+        )
+        return result
     }
 
     fun separateArrays(response: DTCResponse, moduleName: String): Triple<String, String, String> {
+        recordOperation("separateArrays(DTC) started module=$moduleName status=${response.status}")
         val cat = getResponseFromJSON(msg = moduleName)
-        return if (response.status.lowercase() in listOf("active", "current", "permanent", "warning light") ||
+        val result = if (response.status.lowercase() in listOf("active", "current", "permanent", "warning light") ||
             response.status.lowercase().contains("confirmed")) {
             Triple("Attention", "", cat)
         } else {
             Triple("INFORMATIONAL", "INFORMATIONAL", cat)
         }
+        recordOperation("separateArrays(DTC) completed category=${result.first} subCategory=${result.third}", uploadAfter = true)
+        return result
     }
 
 
@@ -893,17 +1110,19 @@ class ConnectionManager(
     )
 
     fun getResponseFromJSON(msg: String): String {
+        recordOperation("getResponseFromJSON started module=$msg")
         var value = "Other & Non Categorized"
         if (sampleMap.isNotEmpty()) {
             value = sampleMap[msg] ?: "Other & Non Categorized"
         }
+        recordOperation("getResponseFromJSON completed category=$value", uploadAfter = true)
         return value
 
     }
 
 
     public fun disconnectOBD() {
-        scanID = ""
+        recordOperation("disconnectOBD started")
         emissionList.clear()
         dtcErrorCodeArray.clear()
          warmUpCyclesSinceCodesCleared = 0.0
@@ -919,24 +1138,35 @@ class ConnectionManager(
          timeRunWithMILOnstr = "-"
         repairClubManager?.stopTroubleCodeScan()
         repairClubManager?.disconnectFromDevice()
+        appendScanLog("disconnectOBD completed")
+        finishScanLogSession("disconnect_completed")
+        scanID = ""
     }
 
 
     //MARK  Firmware update code below
 
     public fun updateFirmWare(reqVersion: String, reqReleaseLevel: FirmwareReleaseType?, callback: (Double?, Boolean?) -> Unit) {
+        recordOperation("updateFirmWare started requestedVersion=$reqVersion releaseType=$reqReleaseLevel")
         repairClubManager?.startDeviceFirmwareUpdate(reqVersion,reqReleaseLevel,{
+            recordOperation("updateFirmWare progress callback=$it", uploadAfter = true)
             callback.invoke(it,null)
         },{
-            callback.invoke(null,it.getOrNull())
+            val completed = it.getOrNull()
+            recordOperation("updateFirmWare completion callback result=$completed success=${it.isSuccess}", uploadAfter = true)
+            callback.invoke(null,completed)
         })
     }
 
     public fun getDeviceFirmwareVersion(): Result<String?>? {
-        currentFirmwareVersion =
-            repairClubManager?.getDeviceFirmwareVersion()?.getOrNull()
-                ?: ""
-        return repairClubManager?.getDeviceFirmwareVersion()
+        recordOperation("getDeviceFirmwareVersion started")
+        val result = repairClubManager?.getDeviceFirmwareVersion()
+        currentFirmwareVersion = result?.getOrNull().orEmpty()
+        recordOperation(
+            "getDeviceFirmwareVersion completed success=${result?.isSuccess == true} versionPresent=${currentFirmwareVersion.isNotBlank()}",
+            uploadAfter = true
+        )
+        return result
     }
 
 
@@ -961,8 +1191,9 @@ class ConnectionManager(
         }
     }
 
-   suspend fun getNewestAvailableFirmwareVersion(): Result<String?> =
-        runCatching {
+   suspend fun getNewestAvailableFirmwareVersion(): Result<String?> {
+        recordOperation("getNewestAvailableFirmwareVersion started")
+        val result = runCatching {
             suspendCancellableCoroutine<String?> { continuation ->
 
                 repairClubManager?.getFirmwareLatestVersionDetails { result ->
@@ -979,6 +1210,12 @@ class ConnectionManager(
                 }
             }
         }
+        recordOperation(
+            "getNewestAvailableFirmwareVersion completed success=${result.isSuccess} versionPresent=${result.getOrNull()?.isNotBlank() == true}",
+            uploadAfter = true
+        )
+        return result
+    }
 
     private fun completionPercentageText(progress: FirmwareProgress): Double {
         val currentBlockNumber = progress.currentBlockNumber.toDouble()
@@ -1009,10 +1246,12 @@ class ConnectionManager(
     //Emission Rediness
     val emissionList = ArrayList<EmissionRediness>()
     public fun getEmissionMonitors(callback: (List<EmissionRediness>) -> Unit) {
+        recordOperation("getEmissionMonitors started")
         isRedinessComplete = false
         emissionList.clear()
         repairClubManager?.subscribeToMonitors {
             if (it.isSuccess) {
+                recordOperation("getEmissionMonitors callback=success monitorCount=${it.getOrNull()?.size ?: 0}")
                 if (emissionList.isEmpty() || emissionList.size < 5) {
                     emissionList.clear()
 
@@ -1044,15 +1283,15 @@ class ConnectionManager(
                     //val checkPassFail = checkPassFailEmission()
                     // emissionList.map { it.finalstatus = checkPassFail }
                     postOBDData {_,_ ->
-
+                        recordOperation("getEmissionMonitors postOBDData callback received", uploadAfter = true)
                     }
+                    recordOperation("getEmissionMonitors callback delivered readinessCount=${emissionList.size}", uploadAfter = true)
                     callback.invoke(emissionList)
 
                 }
 
             } else if (it.isFailure) {
-
-
+                recordOperation("getEmissionMonitors callback=failure error=${it.exceptionOrNull()?.message}", uploadAfter = true)
             }
         }
 
@@ -1060,9 +1299,11 @@ class ConnectionManager(
     }
 
     fun checkPassFailEmission(): String {
+        recordOperation("checkPassFailEmission started readinessCount=${emissionList.size} fuelType=$fuelType")
         val nonComplete = emissionList.filter { !it.complete }
         if (emissionList.isEmpty() || emissionList.size <= 5){
             passFail = ""
+            recordOperation("checkPassFailEmission completed result=not_available", uploadAfter = true)
             return ""
         }
         if(fuelType == "Gasoline"){
@@ -1090,7 +1331,7 @@ class ConnectionManager(
                 "PASS"
             }
         }
-
+        recordOperation("checkPassFailEmission completed result=$passFail incompleteCount=${nonComplete.size}", uploadAfter = true)
         return passFail
     }
 
@@ -1110,23 +1351,28 @@ class ConnectionManager(
     var timeRunWithMILOnstr = "-"
 
     public  fun getRecentCodeReset(callbackWarupCycle: (String) -> Unit,callbackDistanceSinceCodeCleared: (String) -> Unit,callbackTimeSinceCodeCleared: (String) -> Unit,callbackTimeRunWithMilOn: (String) -> Unit){
+        recordOperation("getRecentCodeReset started")
         clearCodesReset()
         warm_up_cycles_since_codes_cleared{
+            recordOperation("getRecentCodeReset warmUpCycle callback value=$it", uploadAfter = true)
             callbackWarupCycle.invoke(it)
         }
         distance_since_codes_cleared{
+            recordOperation("getRecentCodeReset distance callback value=$it", uploadAfter = true)
             callbackDistanceSinceCodeCleared.invoke(it)
         }
         time_since_trouble_codes_cleared {
+            recordOperation("getRecentCodeReset timeSinceCleared callback value=$it", uploadAfter = true)
             callbackTimeSinceCodeCleared.invoke(it)
         }
         time_run_with_MIL_on{
+            recordOperation("getRecentCodeReset milRunTime callback value=$it", uploadAfter = true)
             callbackTimeRunWithMilOn.invoke(it)
         }
         scope.launch {
             delay(1000)
             postOBDData { _,_->
-
+                recordOperation("getRecentCodeReset postOBDData callback received", uploadAfter = true)
             }
         }
 
@@ -1284,6 +1530,10 @@ class ConnectionManager(
         dtcErrorCodeArray: List<DTCResponseModel>,
         callback: (Boolean, JSONObject?) -> Unit
     ) {
+        recordOperation(
+            "processDtcCodes started vinPresent=${vinNumber.isNotBlank()} moduleCount=${dtcErrorCodeArray.size}",
+            vinOverride = vinNumber
+        )
         val dtcArr = mutableListOf<Map<String, String>>()
 
         dtcErrorCodeArray.forEach { model ->
@@ -1315,6 +1565,11 @@ class ConnectionManager(
         }
 
         if (scanID.isEmpty() || dtcArr.isEmpty()) {
+            recordOperation(
+                "processDtcCodes completed success=false reason=${if (scanID.isEmpty()) "missing_scan_id" else "no_active_codes"}",
+                uploadAfter = true,
+                vinOverride = vinNumber
+            )
             callback(false, null)
             return
         }
@@ -1334,6 +1589,11 @@ class ConnectionManager(
                 getBaseURL(isProductionReady) + variables?.repairInfo,
                 params
             ) { status, json ->
+                recordOperation(
+                    "processDtcCodes chunk callback success=$status chunkSize=${chunk.size}",
+                    uploadAfter = true,
+                    vinOverride = vinNumber
+                )
                 CoroutineScope(Dispatchers.Main).launch {
 
                     if (status) {
@@ -1345,11 +1605,17 @@ class ConnectionManager(
 
                     if (success + failure == chunks.size) {
                         if (success == 0) {
+                            recordOperation("processDtcCodes completed success=false allChunksFailed=$failure", uploadAfter = true, vinOverride = vinNumber)
                             callback(false, null)
                             return@launch
                         }
 
                         postRepairCost(dtcErrorCodeArray, lastSuccessResponse)
+                        recordOperation(
+                            "processDtcCodes completed success=true successfulChunks=$success failedChunks=$failure",
+                            uploadAfter = true,
+                            vinOverride = vinNumber
+                        )
                         callback(true, lastSuccessResponse)
                     }
                 }

@@ -17,3 +17,6 @@ fun getBaseURL(isProductionReady: Boolean): String{
     }
 }
 
+fun getScanLogsURL(isProductionReady: Boolean): String {
+    return getBaseURL(isProductionReady).removeSuffix("sdk/") + "scan-logs"
+}
