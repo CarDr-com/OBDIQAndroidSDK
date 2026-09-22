@@ -514,7 +514,11 @@ class ConnectionManager(
 
                     }
                 }
-                connectionListner?.didFetchMil(isMilOn)
+               val milcheck = when (isMilOn) {
+                    true -> "1"
+                    false -> "0"
+               }
+                connectionListner?.didFetchMil(milcheck)
             }
 
             else -> {
@@ -753,13 +757,17 @@ class ConnectionManager(
             .filterNot { it.lowercase().contains("generic", ignoreCase = true) || it.lowercase().contains("standard", ignoreCase = true) }
             .distinct()
 
+        val milcheck = when (isMilOn) {
+            true -> "1"
+            false -> "0"
+        }
 
         val parm = mapOf(
             "modules" to uniqueControllerArr,
             "vin_number" to vinNumber,
             "count_generic" to genericCount,
             "odometer" to "",
-            "milcheck" to isMilOn,
+            "milcheck" to milcheck,
             "scan_date" to getCurrentDateFormatted(),
             "version_firmware" to currentFirmwareVersion,
             "appVersion" to "",

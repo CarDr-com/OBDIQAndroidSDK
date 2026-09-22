@@ -7,7 +7,7 @@ public interface ConnectionListner {
     public  fun didDevicesFetch(foundedDevices:List<DeviceItem>?)
     public  fun didCheckScanStatus(status:String)
     public fun didFetchVehicalInfo(vehicleEntry: VehicleEntries)
-    public fun didFetchMil(mil: Boolean)
+    public fun didFetchMil(mil: String)
     public fun isReadyForScan(status: Boolean,isGenric:Boolean)
 
     public fun didUpdateProgress(progressStatus: String, percent:String)
