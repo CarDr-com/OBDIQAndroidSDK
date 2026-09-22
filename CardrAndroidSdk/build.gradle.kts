@@ -9,7 +9,7 @@ plugins {
 
 android {
     namespace = "com.cardr.cardrandroidsdk"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         minSdk = 30

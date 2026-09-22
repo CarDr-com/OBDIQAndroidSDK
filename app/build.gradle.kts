@@ -8,7 +8,7 @@ plugins {
 
 android {
     namespace = "com.cardr.obdiqandroidsdkapp"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.cardr.obdiqandroidsdkapp"
