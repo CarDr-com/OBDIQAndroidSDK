@@ -79,8 +79,11 @@ private fun proceedWithPermissionsCheck(
 
                         }
 
-                        override fun didFetchMil(mil: Boolean) {
+                        override fun didFetchMil(mil: String) {
+                            TODO("Not yet implemented")
                         }
+
+
 
                         override fun isReadyForScan(status: Boolean, isGenric: Boolean) {
                             Log.e("isReadyForScan",status.toString())
